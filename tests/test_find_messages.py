@@ -12,6 +12,7 @@ from exposurelog.message import MESSAGE_FIELDS
 from exposurelog.testutils import (
     MessageDictT,
     assert_good_response,
+    assert_messages_equal,
     create_test_client,
 )
 
@@ -407,6 +408,47 @@ class FindMessagesTestCase(unittest.IsolatedAsyncioTestCase):
                     assert_messages_ordered(
                         messages=messages, order_by=order_by
                     )
+
+                paged_messages: typing.List[MessageDictT] = []
+                limit = 2
+                find_args["limit"] = limit
+                while len(paged_messages) < len(messages):
+                    num_remaining = len(messages) - len(paged_messages)
+                    # Check limit and offset
+                    response = await client.get(
+                        "/exposurelog/messages/", params=find_args
+                    )
+                    new_paged_messages = assert_good_response(response)
+                    paged_messages += new_paged_messages
+                    assert len(new_paged_messages) == min(limit, num_remaining)
+                    find_args["offset"] = find_args.get("offset", 0) + len(
+                        new_paged_messages
+                    )
+
+                # Run one more find that should return no messages
+                response = await client.get(
+                    "/exposurelog/messages/", params=find_args
+                )
+                no_more_paged_messages = assert_good_response(response)
+                assert len(no_more_paged_messages) == 0
+
+                # Compare paged to unpaged messages
+                messages_dict = {
+                    message["id"]: message for message in messages
+                }
+                paged_messages_dict = {
+                    message["id"]: message for message in paged_messages
+                }
+                for message1, message2 in zip(messages, paged_messages):
+                    # Sort order may not match, but should be compatible
+                    if message1["id"] != message2["id"]:
+                        assert message1[order_by[0]] == message2[order_by[0]]
+                        id1 = message1["id"]
+                        assert_messages_equal(
+                            messages_dict[id1], paged_messages_dict[id1]
+                        )
+                    else:
+                        assert_messages_equal(message1, message2)
 
             # Check order_by two fields
             for field1, field2 in itertools.product(fields, fields):

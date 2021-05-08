@@ -96,12 +96,20 @@ async def find_messages(
         title="Fields to sort by. "
         "Prefix a name with - for descending order, e.g. -id.",
     ),
+    offset: int = fastapi.Query(
+        0,
+        title="The number of messages to skip.",
+    ),
+    limit: int = fastapi.Query(
+        50, title="The maximum number of number of messages to return."
+    ),
     state: SharedState = fastapi.Depends(get_shared_state),
 ) -> list[Message]:
     """Find messages."""
     el_table = state.exposurelog_db.table
 
-    arg_names = (
+    # Names of selection arguments
+    select_arg_names = (
         "site_ids",
         "obs_id",
         "instruments",
@@ -126,7 +134,7 @@ async def find_messages(
         conditions = []
         order_by_columns = []
         # Handle minimums and maximums
-        for key in arg_names:
+        for key in select_arg_names:
             value = locals()[key]
             if value is None:
                 continue
@@ -175,6 +183,8 @@ async def find_messages(
             el_table.select()
             .where(full_conditions)
             .order_by(*order_by_columns)
+            .limit(limit)
+            .offset(offset)
         )
         messages = []
         async for row in result_proxy:
